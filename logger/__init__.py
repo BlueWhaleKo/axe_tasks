@@ -1,1 +1,1 @@
-from .logger import LoggerBuidler, ClassLogger
+from .logger import LoggerBuidler, ClassLogger, LoggerMixin

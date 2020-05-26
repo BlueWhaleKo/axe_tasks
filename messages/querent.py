@@ -20,7 +20,7 @@ from sockets import TCPSocket
 
 class MessageHistory:
     def __init__(self):
-        self.log_path = TCPSocket.LOG_PATH
+        self.log_path = "logger/.logs/sockets.log"
 
         self.msg_factory = MessageFactory()
         self.packet_decoder = PacketDecoder()

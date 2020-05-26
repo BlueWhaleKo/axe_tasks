@@ -1,10 +1,12 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
+import json
 import logging
 import inspect
 import socket
 import time
 
+from logger import LoggerBuidler, LoggerMixin
 from sockets import TCPSocket
 from messages.querent import MessageHistory
 from messages.messages import (
@@ -17,16 +19,17 @@ from messages.messages import (
 )
 
 
-class Client:
+class Client(LoggerMixin):
     def __init__(self, host, port):
         self.host = host
         self.port = port
 
         self.socket = TCPSocket(host=host, port=port)
+
         self.packet_decoder = PacketDecoder()
         self.msg_factory = MessageFactory()
 
-    def sendall(self, packet: bytes, timeout=None) -> bool:
+    def sendall(self, packet: bytes) -> bool:
         """ 
         Returns
         =======
@@ -40,14 +43,16 @@ class Client:
         while True:
             s_packet = self.socket.recv(1024, timeout=0.5)  # receive packet
             if not s_packet:
+                break
 
-                if timeout is None or time.time() - stime > timeout:
-                    break
-                continue
+            self.logger.debug(f"[SERVER] RECEIVED PACKET {s_packet}")
 
             # check if sending msg has succeeded
             msg_kwargs = self.packet_decoder.decode(s_packet)
+
             for kw in msg_kwargs:
+                self.logger.debug(f"[SERVER] RECEIVED DETAIL {json.dumps(kw, indent=4)}")
+
                 msg_type = kw.get("msg_type")
                 res_code = kw.get("response_code")
 
@@ -58,7 +63,7 @@ class Client:
                     is_success = True
 
         if is_success:
-            self.socket.logger.debug("SUCCESS")
+            self.logger.debug(f"[CLIENT] SENDING PACKET SUCCESSFUL {packet}")
         else:
-            self.socket.logger.warning(f"FAILED")
+            self.logger.warning(f"[CLIENT] SENDING PACKET FAILED {packet}")
         return is_success

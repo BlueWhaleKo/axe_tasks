@@ -31,8 +31,12 @@ class ClientTest(unittest.TestCase):
         self._send_fourth_message()
 
     def _clear_log(self):
-        if os.path.exists(TCPSocket.LOG_PATH):
-            os.remove(TCPSocket.LOG_PATH)
+        import glob
+
+        files = glob.glob("loggers/.logs")
+        for f in files:
+            if f[-4:] == ".log":
+                os.remove(f)
 
     def _send_reset_message(self):
         packet = b"reset"

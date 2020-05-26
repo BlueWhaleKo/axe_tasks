@@ -54,7 +54,6 @@ class ClientMessage(Message):
 
     SIZE = 22
     ENCODING_ATTRS = ["msg_type", "order_no", "ticker", "price", "qty"]
-    MSG_TYPE = None
 
     def __init__(self, msg_type: str, order_no: str, ticker: str, price: str, qty: str, **kwargs):
         self.time = None  # 주문 시간 (거래소 전송 x)
@@ -79,6 +78,8 @@ class UnexecutedOrder(NewOrderMessage):
     """ Exchange 서버로 전송하지 않지만, 
         원활한 Message History 관리를 위해 임시로 사용하는 클래스 
     """
+
+    MSG_TYPE = None
 
     pass
 
@@ -118,10 +119,10 @@ class OrderExecutedMessage(Message):
 
 class MessageFactory:
     TYPE_TO_CLS = {
-        "0": NewOrderMessage,
-        "1": CancelOrderMessage,
-        "2": OrderReceivedMessage,
-        "3": OrderExecutedMessage,
+        NewOrderMessage.MSG_TYPE: NewOrderMessage,
+        CancelOrderMessage.MSG_TYPE: CancelOrderMessage,
+        OrderReceivedMessage.MSG_TYPE: OrderReceivedMessage,
+        OrderExecutedMessage.MSG_TYPE: OrderExecutedMessage,
     }
 
     CLS_TO_TYPE = {v: k for k, v in TYPE_TO_CLS.items()}

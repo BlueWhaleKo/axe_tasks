@@ -1,6 +1,44 @@
+from abc import ABC, abstractproperty
 import logging
 import inspect
 import time
+
+
+class LoggerMixin(ABC):
+    """ Mixin을 상속하여 logger를 쉽게 구현 가능 """
+
+    LOGGERS = {}
+    FILE_LEVEL = logging.DEBUG
+    STREAM_LEVEL = logging.DEBUG
+
+    @property
+    def module(self) -> str:
+        # Mixin을 상속한 모듈명
+        return getattr(inspect.getmodule(self.__class__), "__name__")
+
+    @property
+    def log_path(self) -> str:
+        """ you can override this property 
+        return None for no file logging
+        """
+        return f"logger/.logs/{self.module}.log"
+
+    @property
+    def logger(self):
+        loggers = LoggerMixin.LOGGERS
+
+        logger = loggers.get(self.module)
+        if logger:
+            return logger
+
+        # if logger doens't exist, build a new one
+        logger_builder = LoggerBuidler(self.module)
+        logger_builder.addFileHandler(path=self.log_path, level=self.FILE_LEVEL)
+        logger_builder.addStreamHandler(level=self.STREAM_LEVEL)
+        logger = logger_builder.build()
+
+        loggers[self.module] = logger
+        return logger
 
 
 class LoggerBuidler:
@@ -19,7 +57,7 @@ class LoggerBuidler:
         return self._logger
 
     def addFileHandler(self, path, level=logging.DEBUG, *args, **kwargs) -> None:
-        if self._fileHandler is None:
+        if self._fileHandler is None and path is not None:
             fh = logging.FileHandler(path)
             fh.setLevel(level)
             fh.setFormatter(self._formatter)
