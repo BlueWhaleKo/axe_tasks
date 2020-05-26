@@ -1,3 +1,4 @@
+import inspect
 import os
 import socket
 import time
@@ -20,7 +21,6 @@ class ClientTest(unittest.TestCase):
         self.host = "114.204.7.144"
         self.port = 12345
         self.client = Client(self.host, self.port)
-        self.socket_timeout = 1
 
     def test_senario(self):
         self._clear_log()
@@ -36,7 +36,7 @@ class ClientTest(unittest.TestCase):
 
     def _send_reset_message(self):
         packet = b"reset"
-        self.client.sendall(packet, self.socket_timeout)
+        self.client.sendall(packet)
 
     def _send_first_message(self):
         kwargs = {
@@ -48,7 +48,7 @@ class ClientTest(unittest.TestCase):
         }
         msg = self.msg_factory.create(**kwargs)
         packet = msg.encode()
-        self.client.sendall(packet, self.socket_timeout)
+        self.client.sendall(packet)
 
     def _send_second_message(self):
         kwargs = {
@@ -60,38 +60,24 @@ class ClientTest(unittest.TestCase):
         }
         msg = self.msg_factory.create(**kwargs)
         packet = msg.encode()
-        self.client.sendall(packet, self.socket_timeout)
+        self.client.sendall(packet)
 
     def _send_third_message(self):
         unex_orders = self.axe_querent.get_unex_orders_by_ticker_and_price(
             ticker="000660", price="60000"
         )
-        self.assertEqual(len(unex_orders), 1)
+        if not unex_orders:  # all executed
+            print("all orders are execued")
+            return
 
         unex_order = unex_orders.pop()
+        print("Unexecuted Order Info", unex_order)
+
         order_no = getattr(unex_order, "order_no")
-        qty = "10".zfill(5)
+        unex_qty = getattr(unex_order, "unex_qty")
+        qty = min(10, int(unex_qty))
+        qty = str(qty).zfill(5)
 
-        kwargs = {
-            "msg_type": "1",
-            "order_no": order_no,
-            "ticker": "000660",
-            "price": "60000",
-            "qty": "00010",
-        }
-        msg = self.msg_factory.create(**kwargs)
-        packet = msg.encode()
-        self.client.sendall(packet, self.socket_timeout)
-
-    def _send_fourth_message(self):
-        unex_orders = self.axe_querent.get_unex_orders_by_ticker_and_price(
-            ticker="000660", price="61000"
-        )
-        self.assertEqual(len(unex_orders), 1)
-
-        unex_order = unex_orders.pop()
-        order_no = getattr(unex_order, "order_no")
-        qty = getattr(unex_order, "qty")
         kwargs = {
             "msg_type": "1",
             "order_no": order_no,
@@ -101,7 +87,44 @@ class ClientTest(unittest.TestCase):
         }
         msg = self.msg_factory.create(**kwargs)
         packet = msg.encode()
-        self.client.sendall(packet, self.socket_timeout)
+        is_success = self.client.sendall(packet)
+
+        if not is_success:
+            method = getattr(self, inspect.stack()[0][3])  # recall
+            print(f"{method.__name__}() has failed, retrying")
+            method()
+
+    def _send_fourth_message(self):
+        unex_orders = self.axe_querent.get_unex_orders_by_ticker_and_price(
+            ticker="000660", price="61000"
+        )
+        if not unex_orders:  # all executed
+            print("all orders are execued")
+            return
+
+        unex_order = unex_orders.pop()
+        print("Unexecuted Order Info", unex_order)
+
+        order_no = getattr(unex_order, "order_no")
+        unex_qty = getattr(unex_order, "unex_qty")
+        qty = min(10, int(unex_qty))
+        qty = str(qty).zfill(5)
+
+        kwargs = {
+            "msg_type": "1",
+            "order_no": order_no,
+            "ticker": "000660",
+            "price": "60000",
+            "qty": qty,
+        }
+        msg = self.msg_factory.create(**kwargs)
+        packet = msg.encode()
+        is_success = self.client.sendall(packet)
+
+        if not is_success:
+            method = getattr(self, inspect.stack()[0][3])
+            print(f"{method.__name__}() has failed, retrying")
+            method()
 
 
 if __name__ == "__main__":

@@ -151,17 +151,11 @@ class MessageQuerent(MessageHistory):
 
         for order in succ_new_msgs:
             order_no = getattr(order, "order_no")
+            unex_qty = self.calc_unexecuted_qty_by_order_no(order_no)
 
-            # calc unexecuted quantity
-            ordered_qty = int(getattr(order, "qty"))  # int
-            ex_qty = self._calc_executed_qty_by_order_no(order_no)  # int
-            cancel_qty = self._calc_cancelled_qty_by_order_no(order_no)
-
-            unex_qty = ordered_qty - ex_qty - cancel_qty
-            unex_qty = str(unex_qty).zfill(5)  # int -> str
-
-            if unex_qty:
+            if unex_qty:  # not 0
                 unex_order = UnexecutedOrder(**(order.__dict__))
+                unex_qty = str(unex_qty).zfill(5)  # int -> str
                 setattr(unex_order, "unex_qty", unex_qty)
                 unexecuted_orders.append(unex_order)
 
@@ -196,26 +190,41 @@ class MessageQuerent(MessageHistory):
     """ utility methods """
 
     def _sum_qty(self, msgs: List[Message]):
+        """ 인자로 받은 Message Class의 qty 속성값 합을 반환
+        미체결 주문(UnexecutedOrder)은 unex_qty 속성의 합을 반환
+        """
+        if not len(msgs):  # empty
+            return 0
+
+        if len(set(m.__class__ for m in msgs)) > 1:  # all msgs must be same type
+            raise TypeError(f"Mixed types not supported {set(m.__class__ for m in msgs)}")
+
+        if isinstance(msgs[0].__class__, UnexecutedOrder):
+            return sum([int(m.unex_qty) for m in msgs])
         return sum([int(m.qty) for m in msgs])
 
-    def _sum_unex_qty(self, msgs: List[Message]):
-        return sum([int(m.unex_qty) for m in msgs])
+    def calc_ordered_qty_by_order_no(self, order_no: str) -> int:
+        msgs = self.select_by_order_no(order_no)
+        msgs = self.select_by_cls(NewOrderMessage, msgs)
+        succ_order_msgs = self.select_by_response_code(OrderReceivedMessage.SUCCESS, msgs)
+        return self._sum_qty(succ_order_msgs)
 
-    def _calc_executed_qty_by_order_no(self, order_no: str):
-        ex_msgs = self.select_by_cls(OrderExecutedMessage)
-        ex_msgs = self.select_by_order_no(order_no, ex_msgs)
-        return self._sum_qty(ex_msgs)
-
-    def _calc_cancelled_qty_by_order_no(self, order_no: str):
-        qty = 0
-
-        cancel_msgs = self.select_by_cls(CancelOrderMessage)
-        cancel_msgs = self.select_by_order_no(order_no, cancel_msgs)
-        succ_cancel_msgs = self.select_by_response_code(
-            OrderReceivedMessage.SUCCESS, cancel_msgs
-        )
-
+    def calc_cancelled_qty_by_order_no(self, order_no: str) -> int:
+        msgs = self.select_by_order_no(order_no)
+        msgs = self.select_by_cls(CancelOrderMessage, msgs)
+        succ_cancel_msgs = self.select_by_response_code(OrderReceivedMessage.SUCCESS, msgs)
         return self._sum_qty(succ_cancel_msgs)
+
+    def calc_executed_qty_by_order_no(self, order_no: str) -> int:
+        msgs = self.select_by_order_no(order_no)
+        msgs = self.select_by_cls(OrderExecutedMessage, msgs)
+        return self._sum_qty(msgs)
+
+    def calc_unexecuted_qty_by_order_no(self, order_no: str) -> int:
+        order_qty = self.calc_ordered_qty_by_order_no(order_no)
+        ex_qty = self.calc_executed_qty_by_order_no(order_no)  # int
+        cancel_qty = self.calc_cancelled_qty_by_order_no(order_no)
+        return order_qty - ex_qty - cancel_qty
 
 
 class AXETaskQuerent(MessageQuerent):
@@ -231,7 +240,7 @@ class AXETaskQuerent(MessageQuerent):
 
         msgs = self.select_by_ticker(ticker)  # default: ticker matching
         unex_orders = self.select_unexecuted_orders(msgs)
-        return self._sum_unex_qty(unex_orders)
+        return self._sum_qty(unex_orders)
 
     def get_unex_qty_by_ticker_and_price(self, ticker: str, price: str or int):
         """ 2. 종목코드와 가격을 입력으로 전체 미체결 주문 목록을 반환하는 함수 """
@@ -243,7 +252,7 @@ class AXETaskQuerent(MessageQuerent):
         msgs = self.select_by_price(price, msgs)  # default
 
         unex_orders = self.select_unexecuted_orders(msgs)
-        return self._sum_unex_qty(unex_orders)
+        return self._sum_qty(unex_orders)
 
     def get_unex_orders_by_ticker(self, ticker: str):
         """ 3. 종목코드를 입력으로 전체 미체결 주문 목록을 반환하는 함수 """

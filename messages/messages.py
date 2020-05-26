@@ -30,6 +30,10 @@ class Message(ABC):
     def ENCODING_ATTRS(self) -> List[str]:  # Exchange 서버로 전송할 property 리스트
         pass
 
+    @abstractproperty
+    def MSG_TYPE(self) -> str:
+        pass
+
     def encode(self) -> bytes:
         """ convert attributes into bytes, sequence is important! """
         attrs = [v for k, v in self.__dict__.items() if k in self.ENCODING_ATTRS]
@@ -50,28 +54,24 @@ class ClientMessage(Message):
 
     SIZE = 22
     ENCODING_ATTRS = ["msg_type", "order_no", "ticker", "price", "qty"]
+    MSG_TYPE = None
 
-    def __init__(
-        self, msg_type: str, order_no: str, ticker: str, price: str, qty: str, **kwargs
-    ):
+    def __init__(self, msg_type: str, order_no: str, ticker: str, price: str, qty: str, **kwargs):
         self.time = None  # 주문 시간 (거래소 전송 x)
         self.response_code = None  # 주문 성공/실패 여부 (거래소 전송 x)
 
         super().__init__(
-            msg_type=msg_type,
-            order_no=order_no,
-            ticker=ticker,
-            price=price,
-            qty=qty,
-            **kwargs,
+            msg_type=msg_type, order_no=order_no, ticker=ticker, price=price, qty=qty, **kwargs,
         )  # overwrite 가능
 
 
 class NewOrderMessage(ClientMessage):
+    MSG_TYPE = "0"
     pass
 
 
 class CancelOrderMessage(ClientMessage):
+    MSG_TYPE = "1"
     pass
 
 
@@ -88,14 +88,13 @@ class OrderReceivedMessage(Message):
 
     SIZE = 7
     ENCODING_ATTRS = ["msg_type", "order_no", "response_code"]
+    MSG_TYPE = "2"
 
     SUCCESS = "0"
     FAIL = "1"
 
     def __init__(self, msg_type, order_no, response_code):
-        super().__init__(
-            msg_type=msg_type, order_no=order_no, response_code=response_code
-        )
+        super().__init__(msg_type=msg_type, order_no=order_no, response_code=response_code)
 
     def is_success(self):
         return self.response_code == self.SUCCESS
@@ -109,6 +108,9 @@ class OrderExecutedMessage(Message):
 
     SIZE = 11
     ENCODING_ATTRS = ["msg_type", "order_no", "qty"]
+    MSG_TYPE = "3"
+
+    response_code = OrderReceivedMessage.SUCCESS  # executed message는 항상 성공
 
     def __init__(self, msg_type, order_no, qty):
         super().__init__(msg_type=msg_type, order_no=order_no, qty=qty)
@@ -155,9 +157,7 @@ class PacketDecoder:
         elif isinstance(bytes_, str):
             letters = list(bytes_)
         else:
-            err_msg = (
-                f"argument for {self.__class__}.decode() must be str or bytes type"
-            )
+            err_msg = f"argument for {self.__class__}.decode() must be str or bytes type"
             raise TypeError(err_msg)
 
         """ decode packet """
@@ -166,7 +166,7 @@ class PacketDecoder:
 
         while len(letter_queue):
             msg_type = letter_queue[0]
-            msg_cls = MessageFactory.TYPE_TO_CLS.get(msg_type)
+            msg_cls = MessageFactory.TYPE_TO_CLS.get(msg_type, None)
             if msg_cls is None:
                 raise MessageTypeNotSupported(f"MSG TYPE {msg_type} is not supported")
 
@@ -178,7 +178,6 @@ class PacketDecoder:
             kwargs = self._decode(buffer)
             result.append(kwargs)
 
-        result.reverse()  # b'2xxxxx' 가 앞에 오도록 역순으로 정렬
         return result
 
     def _decode(self, packet: str or bytes):

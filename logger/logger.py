@@ -8,15 +8,11 @@ class LoggerBuidler:
     _fileHandler = None
     _streamHandler = None
 
-    def __init__(
-        self,
-        name,
-        level=logging.DEBUG,
-        format="[%(levelname)s][%(asctime)s] %(message)s",
-    ):
-        self._logger = logging.getLogger(name)
-        self._logger.setLevel(level)
+    def __init__(self, name, format=""):
+        if not format:
+            format = "[%(module)s:%(lineno)d][%(levelname)s][%(asctime)s] %(message)s"
 
+        self._logger = logging.getLogger(name)
         self._formatter = logging.Formatter(format)
 
     def build(self) -> logging.Logger:
@@ -44,10 +40,10 @@ class LoggerBuidler:
 class ClassLogger(logging.getLoggerClass()):
     """ 기존 Logger 클래스와 통일성 위해 매서드 이름은 camelCase로 작성 """
 
-    def __init__(self, name="", *args, **kwargs):
+    def __init__(self, name="", level=logging.DEBUG, *args, **kwargs):
         if not name:
             name = getattr(inspect.getmodule(self.__class__), "__name__")
-        super(ClassLogger, self).__init__(name, *args, **kwargs)
+        super(ClassLogger, self).__init__(name, level=level, *args, **kwargs)
 
     @staticmethod
     def debug_mode(func):
