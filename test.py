@@ -3,6 +3,7 @@ import os
 import socket
 import time
 
+from logger import LoggerMixin
 from messages.messages import MessageFactory, PacketDecoder
 from messages.querent import AXETaskQuerent
 from sockets import TCPSocket
@@ -11,7 +12,11 @@ from client import Client
 import unittest
 
 
-class ClientTest(unittest.TestCase):
+class ClientTest(unittest.TestCase, LoggerMixin):
+    @property
+    def log_path(self):
+        return "logger/.logs/test.log"
+
     def __init__(self, *args, **kwargs):
         super(ClientTest, self).__init__(*args, **kwargs)
         self.msg_factory = MessageFactory()
@@ -71,11 +76,11 @@ class ClientTest(unittest.TestCase):
             ticker="000660", price="60000"
         )
         if not unex_orders:  # all executed
-            print("all orders are execued")
+            self.logger.debug("all orders are execued")
             return
 
         unex_order = unex_orders.pop()
-        print("Unexecuted Order Info", unex_order)
+        self.logger.debug("Unexecuted Order Info" + str(unex_order))
 
         order_no = getattr(unex_order, "order_no")
         unex_qty = getattr(unex_order, "unex_qty")
@@ -95,7 +100,7 @@ class ClientTest(unittest.TestCase):
 
         if not is_success:
             method = getattr(self, inspect.stack()[0][3])  # recall
-            print(f"{method.__name__}() has failed, retrying")
+            self.logger.debug(f"{method.__name__}() has failed, retrying")
             method()
 
     def _send_fourth_message(self):
@@ -103,11 +108,11 @@ class ClientTest(unittest.TestCase):
             ticker="000660", price="61000"
         )
         if not unex_orders:  # all executed
-            print("all orders are execued")
+            self.logger.debug("all orders are execued")
             return
 
         unex_order = unex_orders.pop()
-        print("Unexecuted Order Info", unex_order)
+        self.logger.debug("Unexecuted Order Info" + str(unex_order))
 
         order_no = getattr(unex_order, "order_no")
         unex_qty = getattr(unex_order, "unex_qty")
@@ -127,7 +132,7 @@ class ClientTest(unittest.TestCase):
 
         if not is_success:
             method = getattr(self, inspect.stack()[0][3])
-            print(f"{method.__name__}() has failed, retrying")
+            self.logger.debug(f"{method.__name__}() has failed, retrying")
             method()
 
 

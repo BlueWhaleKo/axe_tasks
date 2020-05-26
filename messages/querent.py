@@ -147,13 +147,15 @@ class MessageQuerent(MessageHistory):
         unexecuted_orders = []
 
         new_msgs = self.select_by_cls(NewOrderMessage, msgs)
-        succ_new_msgs = self.select_by_response_code("0", new_msgs)  # 유효한 신규 주문
+        succ_new_msgs = self.select_by_response_code(
+            OrderReceivedMessage.SUCCESS, new_msgs
+        )  # 유효한 신규 주문
 
         for order in succ_new_msgs:
             order_no = getattr(order, "order_no")
             unex_qty = self.calc_unexecuted_qty_by_order_no(order_no)
 
-            if unex_qty:  # not 0
+            if unex_qty > 0:  # not 0
                 unex_order = UnexecutedOrder(**(order.__dict__))
                 unex_qty = str(unex_qty).zfill(5)  # int -> str
                 setattr(unex_order, "unex_qty", unex_qty)
