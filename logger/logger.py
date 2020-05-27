@@ -17,6 +17,10 @@ class LoggerMixin(ABC):
         return getattr(inspect.getmodule(self.__class__), "__name__")
 
     @property
+    def top_level_module(self) -> str:
+        return getattr(inspect.getmodule(self.__class__), "__name__").split(".")[0]
+
+    @property
     def log_path(self) -> str:
         """ you can override this property 
         return None for no file logging
@@ -25,9 +29,7 @@ class LoggerMixin(ABC):
 
     @property
     def logger(self):
-        loggers = LoggerMixin.LOGGERS
-
-        logger = loggers.get(self.module)
+        logger = LoggerMixin.LOGGERS.get(self.module)
         if logger:
             return logger
 
@@ -37,7 +39,7 @@ class LoggerMixin(ABC):
         logger_builder.addStreamHandler(level=self.STREAM_LEVEL)
         logger = logger_builder.build()
 
-        loggers[self.module] = logger
+        LoggerMixin.LOGGERS[self.module] = logger
         return logger
 
 

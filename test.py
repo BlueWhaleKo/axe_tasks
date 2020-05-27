@@ -1,3 +1,4 @@
+import glob
 import inspect
 import os
 import socket
@@ -5,10 +6,8 @@ import time
 
 from logger import LoggerMixin
 from messages.messages import MessageFactory
-from sockets.decoder import PacketDecoder
-from messages.querent import AXETaskQuerent
-from sockets import TCPSocket
-from client import Client
+from orders.client import Client
+from orders.querent import AXETaskQuerent
 
 import unittest
 
@@ -20,7 +19,7 @@ class ClientTest(unittest.TestCase, LoggerMixin):
 
     def __init__(self, *args, **kwargs):
         super(ClientTest, self).__init__(*args, **kwargs)
-        self.msg_factory = MessageFactory(PacketDecoder())
+        self.msg_factory = MessageFactory()
         self.axe_querent = AXETaskQuerent()
 
         self.host = "114.204.7.144"
@@ -28,24 +27,27 @@ class ClientTest(unittest.TestCase, LoggerMixin):
         self.client = Client(self.host, self.port)
 
     def test_senario(self):
-        self._clear_log()
+        self._reset()
         self._send_reset_message()
         self._send_first_message()
         self._send_second_message()
         self._send_third_message()
         self._send_fourth_message()
 
-    def _clear_log(self):
-        import glob
+    def _reset(self):
+        self.client.redis.flushall()  # reset cache
 
-        files = glob.glob("loggers/.logs")
-        for f in files:
-            if f[-4:] == ".log":
-                os.remove(f)
+        # reset log
+        for dir_path, dir_names, f_names in os.walk("logger/.logs"):
+            for f in f_names:
+                if not f[-4:] == ".log":
+                    continue
+
+                f_path = os.path.join(dir_path, f)
+                os.remove(f_path)
 
     def _send_reset_message(self):
-        packet = b"reset"
-        self.client.sendall(packet)
+        self.client.sendall(b"reset")
 
     def _send_first_message(self):
         kwargs = {
@@ -55,8 +57,7 @@ class ClientTest(unittest.TestCase, LoggerMixin):
             "price": "60000",
             "qty": "00020",
         }
-        msg = self.msg_factory.create(**kwargs)
-        packet = msg.encode()
+        packet = "".join(kwargs.values()).encode()
         self.client.sendall(packet)
 
     def _send_second_message(self):
@@ -67,8 +68,7 @@ class ClientTest(unittest.TestCase, LoggerMixin):
             "price": "61000",
             "qty": "00030",
         }
-        msg = self.msg_factory.create(**kwargs)
-        packet = msg.encode()
+        packet = "".join(kwargs.values()).encode()
         self.client.sendall(packet)
 
     def _send_third_message(self):
@@ -80,7 +80,8 @@ class ClientTest(unittest.TestCase, LoggerMixin):
             return
 
         unex_order = unex_orders.pop()
-        self.logger.debug("Unexecuted Order Info" + str(unex_order))
+        print(unex_order)
+        self.logger.debug("UnexecutedOrder Info" + str(unex_order))
 
         order_no = getattr(unex_order, "order_no")
         unex_qty = getattr(unex_order, "unex_qty")
@@ -94,11 +95,10 @@ class ClientTest(unittest.TestCase, LoggerMixin):
             "price": "60000",
             "qty": qty,
         }
-        msg = self.msg_factory.create(**kwargs)
-        packet = msg.encode()
+        packet = "".join(kwargs.values()).encode()
         is_success = self.client.sendall(packet)
 
-        if not is_success:
+        if not is_success:  # retry
             method = getattr(self, inspect.stack()[0][3])  # recall
             self.logger.debug(f"{method.__name__}() has failed, retrying")
             method()
@@ -112,7 +112,7 @@ class ClientTest(unittest.TestCase, LoggerMixin):
             return
 
         unex_order = unex_orders.pop()
-        self.logger.debug("Unexecuted Order Info" + str(unex_order))
+        self.logger.debug("UnexecutedOrder Info" + str(unex_order))
 
         order_no = getattr(unex_order, "order_no")
         unex_qty = getattr(unex_order, "unex_qty")
@@ -126,8 +126,7 @@ class ClientTest(unittest.TestCase, LoggerMixin):
             "price": "60000",
             "qty": qty,
         }
-        msg = self.msg_factory.create(**kwargs)
-        packet = msg.encode()
+        packet = "".join(kwargs.values()).encode()
         is_success = self.client.sendall(packet)
 
         if not is_success:

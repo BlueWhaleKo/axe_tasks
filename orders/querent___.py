@@ -3,31 +3,46 @@ from copy import deepcopy
 import os
 import re
 from typing import List
+import warnings
 
-from .messages import (
+from messages import (
     Message,
     NewOrderMessage,
     CancelOrderMessage,
     OrderReceivedMessage,
     OrderExecutedMessage,
     MessageFactory,
-    UnexecutedOrder,
 )
 
-from sockets.decoder import PacketDecoder
+from logger import LoggerMixin
+from .orders import (
+    NewOrder,
+    CancelOrder,
+    ReceivedOrder,
+    ExecutedOrder,
+    UnexecutedOrder,
+)
 from sockets import TCPSocket
 
 
-class MessageHistory:
+class Singleton(object):
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not isinstance(cls._instance, cls):
+            cls._instance = object.__new__(cls, *args, **kwargs)
+        return cls._instance
+
+
+class OrderHistory(Singleton, LoggerMixin):
     def __init__(self):
-        self.log_path = "logger/.logs/sockets.log"
-
-        self.msg_factory = MessageFactory(PacketDecoder())
-
         self._history = []
+        self._last_history_idx = 0
         self._last_modified = None
 
         self._last_client_msg = None
+
+        self.msg_factory = MessageFactory()
 
     def __iter__(self):
         return iter(self.history)
@@ -52,48 +67,57 @@ class MessageHistory:
 
     @property
     def history(self):
-        """ refresh per every call """
+        self._update()
+        return self._history
+
+    def _update(self) -> None:
+        """ return updated history """
         if not os.path.exists(self.log_path):  # if log file doesn't exist
-            return self._history
+            return
 
         if self._last_modified is None:  # initial call
             self._last_modified = os.path.getmtime(self.log_path)
-            self._update_history()
+            self._update_history_from_log()
 
         elif self._last_modified != os.path.getmtime(self.log_path):  # has changed
-            self._update_history()  # refresh
+            self._update_history_from_log()  # refresh
 
-        return self._history  # (not initial call) and (no change)
+    def _update_history_from_log(self):
+        try:
+            with open(self.log_path, "r") as f:
+                new_lines = [
+                    l.rstrip() for l in f.readlines()[self._last_history_idx :]
+                ]
+        except FileNotFoundError:
+            warnings.warn(f"{self.log_path} doens't exists")
+            return None
 
-    def _update_history(self):
-        self._history = []
-
-        with open(self.log_path, "r") as f:
-            lines = [line.rstrip() for line in f]
-
-        for l in lines:
-            pk = self._parse_packet(l)
+        for l in new_lines:
+            packet = self._parse_packet(l)
             time = self._parse_time(l)
 
-            if pk is None:  # no matching data
+            if packet is None or time is None:
                 continue
 
-            msgs = self.msg_factory.create_from_packet(pk)
-
+            msgs = self.msg_factory.create(packet)
             for m in msgs:
                 setattr(m, "time", time)  # 모든 메시지에 time property 추가
 
                 if isinstance(m, (NewOrderMessage, CancelOrderMessage)):
-                    self._last_client_msg = m  # NewOrderMessage는 order_no가 비어있음
+                    # NewOrderMessage는 (order_no, response_code)가 비어있음
+                    # CancelOrderMessage는 response_code가 비어있음
+                    self._last_client_msg = m
 
                 if isinstance(m, OrderReceivedMessage):
-                    # 따라서, OrderReceivedMessage를 받은 이후에 order_no을 채워줘야 함
+                    # 따라서, OrderReceivedMessage를 받은 이후에 order_no, response_code를 채워줘야 함
                     if isinstance(self._last_client_msg, NewOrderMessage):
                         setattr(self._last_client_msg, "order_no", m.order_no)
 
                     setattr(self._last_client_msg, "response_code", m.response_code)
 
                 self._history.append(m)
+
+        self._last_history_idx += len(new_lines)
 
     def _parse_packet(self, str_: str):
         """ pattern: b'00000202000020'"""
@@ -110,11 +134,14 @@ class MessageHistory:
     def _parse_time(self, str_: str):
         """ pattern: 2020-05-25 17:07:22,166 """
         pattern = re.compile(r"\d+[-]\d+[-]\d+ \d+[:]\d+[:]\d+[,]\d+")
-        time = pattern.search(str_).group()
-        return time
+        try:
+            time = pattern.search(str_).group()
+            return time
+        except AttributeError:
+            return None
 
 
-class MessageQuerent(MessageHistory):
+class MessageQuerent(OrderHistory):
 
     """ 
     query method를 조합하여 원하는 형태로 쿼리 가능
@@ -155,18 +182,18 @@ class MessageQuerent(MessageHistory):
             unex_qty = self.calc_unexecuted_qty_by_order_no(order_no)
 
             if unex_qty > 0:  # not 0
-                unex_order = UnexecutedOrder(**(order.__dict__))
-                unex_qty = str(unex_qty).zfill(5)  # int -> str
-                setattr(unex_order, "unex_qty", unex_qty)
+                unex_order = UnexecutedOrder(**order.__dict__)
+                setattr(unex_order, "unex_qty", str(unex_qty).zfill(5))
+
                 unexecuted_orders.append(unex_order)
 
         return unexecuted_orders
 
     # low-level qeury methods
-    def select_by_cls(self, cls_: Message, msgs: List[Message] = None):
+    def select_by_cls(self, cls: Message, msgs: List[Message] = None):
         if msgs is None:
             msgs = self.history
-        return [m for m in msgs if isinstance(m, cls_)]
+        return [m for m in msgs if isinstance(m, cls)]
 
     def select_by_ticker(self, ticker: str, msgs: List[Message] = None):
         if msgs is None:

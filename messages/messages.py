@@ -10,15 +10,16 @@ from exceptions import MessageTypeNotSupported, PacketDecodeError
 
 ※ 새로운 Message Class를 추가하는 경우 다음의 수정이 필요함
 1. MessageFactory Class의 TYPE_TO_CLASS 속성과 create 메서드 수정
-2. PacketDecoder Class의 _decode<ClassName> 매서드 확장
-
 """
 
 
 class Message(ABC):
     """ Abstract Class for Message Classes """
 
-    def __init__(self, **kwargs):
+    def __init__(self, packet: str):
+        self.packet = packet
+
+        kwargs = self.translate(packet)
         for k, v in kwargs.items():
             setattr(self, k, v)
 
@@ -34,19 +35,25 @@ class Message(ABC):
     def MSG_TYPE(self) -> str:
         pass
 
+    @staticmethod
+    @abstractmethod
+    def translate(packet: str) -> Dict:
+        """ converte bytes to msg kwargs """
+        pass
+
     def encode(self) -> bytes:
         """ convert attributes into bytes, sequence is important! """
         attrs = [v for k, v in self.__dict__.items() if k in self.ENCODING_ATTRS]
         return "".join(attrs).encode()
 
-    def json(self, indent=4):
-        return json.dumps(self.__dict__, indent=4)
+    def json(self, indent=None):
+        return json.dumps(self.__dict__, indent=indent)
 
     def __str__(self):
-        return self.json()
+        return self.json(indent=4)
 
     def __repr__(self):
-        return self.json()
+        return self.json(indent=4)
 
 
 class ClientMessage(Message):
@@ -55,20 +62,15 @@ class ClientMessage(Message):
     SIZE = 22
     ENCODING_ATTRS = ["msg_type", "order_no", "ticker", "price", "qty"]
 
-    def __init__(
-        self, msg_type: str, order_no: str, ticker: str, price: str, qty: str, **kwargs
-    ):
-        self.time = None  # 주문 시간 (거래소 전송 x)
-        self.response_code = None  # 주문 성공/실패 여부 (거래소 전송 x)
-
-        super().__init__(
-            msg_type=msg_type,
-            order_no=order_no,
-            ticker=ticker,
-            price=price,
-            qty=qty,
-            **kwargs,
-        )  # overwrite 가능
+    @staticmethod
+    def translate(packet: str):
+        return {
+            "msg_type": packet[0],
+            "order_no": packet[1:6],
+            "ticker": packet[6:12],
+            "price": packet[12:17],
+            "qty": packet[17:22],
+        }
 
 
 class NewOrderMessage(ClientMessage):
@@ -81,36 +83,23 @@ class CancelOrderMessage(ClientMessage):
     pass
 
 
-class UnexecutedOrder(NewOrderMessage):
-    """ Exchange 서버로 전송하지 않지만, 
-        원활한 Message History 관리를 위해 임시로 사용하는 클래스 
-    """
-
-    MSG_TYPE = None
-
-    pass
-
-
 class OrderReceivedMessage(Message):
     """ Server Side Message """
 
+    MSG_TYPE = "2"
     SIZE = 7
     ENCODING_ATTRS = ["msg_type", "order_no", "response_code"]
-    MSG_TYPE = "2"
 
     SUCCESS = "0"
     FAIL = "1"
 
-    def __init__(self, msg_type, order_no, response_code):
-        super().__init__(
-            msg_type=msg_type, order_no=order_no, response_code=response_code
-        )
-
-    def is_success(self):
-        return self.response_code == self.SUCCESS
-
-    def is_fail(self):
-        return self.response_code == self.FAIL
+    @staticmethod
+    def translate(packet: str):
+        return {
+            "msg_type": packet[0],
+            "order_no": packet[1:6],
+            "response_code": packet[6],
+        }
 
 
 class OrderExecutedMessage(Message):
@@ -122,30 +111,70 @@ class OrderExecutedMessage(Message):
 
     response_code = OrderReceivedMessage.SUCCESS  # executed message는 항상 성공
 
-    def __init__(self, msg_type, order_no, qty):
-        super().__init__(msg_type=msg_type, order_no=order_no, qty=qty)
+    @staticmethod
+    def translate(packet: str):
+        return {
+            "msg_type": packet[0],
+            "order_no": packet[1:6],
+            "qty": packet[6:11],
+        }
+
+
+""" Factory """
 
 
 class MessageFactory:
     TYPE_TO_CLS = {
-        NewOrderMessage.MSG_TYPE: NewOrderMessage,
-        CancelOrderMessage.MSG_TYPE: CancelOrderMessage,
-        OrderReceivedMessage.MSG_TYPE: OrderReceivedMessage,
-        OrderExecutedMessage.MSG_TYPE: OrderExecutedMessage,
+        "0": NewOrderMessage,
+        "1": CancelOrderMessage,
+        "2": OrderReceivedMessage,
+        "3": OrderExecutedMessage,
     }
 
     CLS_TO_TYPE = {v: k for k, v in TYPE_TO_CLS.items()}
 
-    def __init__(self, packet_decoder):
-        self.packet_decoder = packet_decoder
+    def create(self, packet: str) -> List[Message]:
+        if isinstance(packet, bytes):
+            packet = packet.decode()
 
-    def create(self, msg_type: str, *args, **kwargs) -> Message:
-        msg_cls = self.TYPE_TO_CLS.get(msg_type)
+        packets = self.split_packet(packet)
+        return [self._create(p) for p in packets]
+
+    def _create(self, packet: str) -> Message:
+        msg_cls = self.get_msg_cls_from_packet(packet)
         if msg_cls is None:
             raise MessageTypeNotSupported()
 
-        return msg_cls(msg_type, *args, **kwargs)
+        return msg_cls(packet)
 
-    def create_from_packet(self, packet: bytes) -> List[Message]:
-        msg_kwargs = self.packet_decoder.decode(packet)
-        return [self.create(**kw) for kw in msg_kwargs]
+    def split_packet(self, packet: str) -> List[str]:
+        """ split stacked packets to each packets """
+        result = []
+
+        letters = list(packet)
+        letter_queue = deque(letters)  # letters -> List[str]
+
+        while len(letter_queue):
+            msg_type = letter_queue[0]
+            msg_cls = MessageFactory.get_msg_cls_from_msg_type(msg_type)
+            if msg_cls is None:
+                print(letter_queue)
+                raise MessageTypeNotSupported(f"MSG TYPE {msg_type} is not supported")
+
+            buffer = []
+            for _ in range(msg_cls.SIZE):
+                buffer.append(letter_queue.popleft())
+            buffer = "".join(buffer)  # str copy 최소화
+
+            result.append(buffer)
+
+        return result
+
+    @classmethod
+    def get_msg_cls_from_packet(cls, packet: str):
+        msg_type = packet[0]
+        return cls.TYPE_TO_CLS.get(msg_type, None)
+
+    @classmethod
+    def get_msg_cls_from_msg_type(cls, msg_type: str):
+        return cls.TYPE_TO_CLS.get(msg_type, None)
