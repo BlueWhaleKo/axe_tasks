@@ -11,10 +11,10 @@ from .messages import (
     OrderReceivedMessage,
     OrderExecutedMessage,
     MessageFactory,
-    PacketDecoder,
     UnexecutedOrder,
 )
 
+from sockets.decoder import PacketDecoder
 from sockets import TCPSocket
 
 
@@ -22,8 +22,7 @@ class MessageHistory:
     def __init__(self):
         self.log_path = "logger/.logs/sockets.log"
 
-        self.msg_factory = MessageFactory()
-        self.packet_decoder = PacketDecoder()
+        self.msg_factory = MessageFactory(PacketDecoder())
 
         self._history = []
         self._last_modified = None
@@ -199,7 +198,9 @@ class MessageQuerent(MessageHistory):
             return 0
 
         if len(set(m.__class__ for m in msgs)) > 1:  # all msgs must be same type
-            raise TypeError(f"Mixed types not supported {set(m.__class__ for m in msgs)}")
+            raise TypeError(
+                f"Mixed types not supported {set(m.__class__ for m in msgs)}"
+            )
 
         if isinstance(msgs[0].__class__, UnexecutedOrder):
             return sum([int(m.unex_qty) for m in msgs])
@@ -208,13 +209,17 @@ class MessageQuerent(MessageHistory):
     def calc_ordered_qty_by_order_no(self, order_no: str) -> int:
         msgs = self.select_by_order_no(order_no)
         msgs = self.select_by_cls(NewOrderMessage, msgs)
-        succ_order_msgs = self.select_by_response_code(OrderReceivedMessage.SUCCESS, msgs)
+        succ_order_msgs = self.select_by_response_code(
+            OrderReceivedMessage.SUCCESS, msgs
+        )
         return self._sum_qty(succ_order_msgs)
 
     def calc_cancelled_qty_by_order_no(self, order_no: str) -> int:
         msgs = self.select_by_order_no(order_no)
         msgs = self.select_by_cls(CancelOrderMessage, msgs)
-        succ_cancel_msgs = self.select_by_response_code(OrderReceivedMessage.SUCCESS, msgs)
+        succ_cancel_msgs = self.select_by_response_code(
+            OrderReceivedMessage.SUCCESS, msgs
+        )
         return self._sum_qty(succ_cancel_msgs)
 
     def calc_executed_qty_by_order_no(self, order_no: str) -> int:

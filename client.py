@@ -15,8 +15,8 @@ from messages.messages import (
     OrderReceivedMessage,
     OrderExecutedMessage,
     MessageFactory,
-    PacketDecoder,
 )
+from sockets.decoder import PacketDecoder
 
 
 class Client(LoggerMixin):
@@ -27,7 +27,6 @@ class Client(LoggerMixin):
         self.socket = TCPSocket(host=host, port=port)
 
         self.packet_decoder = PacketDecoder()
-        self.msg_factory = MessageFactory()
 
     def sendall(self, packet: bytes) -> bool:
         """ 
@@ -51,7 +50,9 @@ class Client(LoggerMixin):
             msg_kwargs = self.packet_decoder.decode(s_packet)
 
             for kw in msg_kwargs:
-                self.logger.debug(f"[SERVER] RECEIVED DETAIL {json.dumps(kw, indent=4)}")
+                self.logger.debug(
+                    f"[SERVER] RECEIVED DETAIL {json.dumps(kw, indent=4)}"
+                )
 
                 msg_type = kw.get("msg_type")
                 res_code = kw.get("response_code")

@@ -4,7 +4,8 @@ import socket
 import time
 
 from logger import LoggerMixin
-from messages.messages import MessageFactory, PacketDecoder
+from messages.messages import MessageFactory
+from sockets.decoder import PacketDecoder
 from messages.querent import AXETaskQuerent
 from sockets import TCPSocket
 from client import Client
@@ -19,8 +20,7 @@ class ClientTest(unittest.TestCase, LoggerMixin):
 
     def __init__(self, *args, **kwargs):
         super(ClientTest, self).__init__(*args, **kwargs)
-        self.msg_factory = MessageFactory()
-        self.packet_decoder = PacketDecoder()
+        self.msg_factory = MessageFactory(PacketDecoder())
         self.axe_querent = AXETaskQuerent()
 
         self.host = "114.204.7.144"

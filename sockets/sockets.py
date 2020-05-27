@@ -4,8 +4,6 @@ import select
 
 from logger import LoggerBuidler, LoggerMixin
 
-loggers = {}  # prevent duplicated handler
-
 
 class TCPSocket(socket.socket, LoggerMixin):
     """ TCP/IP 소켓 """
