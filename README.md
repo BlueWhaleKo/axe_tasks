@@ -23,7 +23,7 @@ python -m messages.querent
 
 ## [1st Feeback] Enhancement
 
-#### [Minor changes](https://github.com/DonghyungKo/axe_tasks/issues/4)
+#### [[Closed] Minor changes](https://github.com/DonghyungKo/axe_tasks/issues/4)
 
 1. LoggerBuilder에 level parameter 수정
 
@@ -36,11 +36,11 @@ python -m messages.querent
 5. result.reverse() 
 
 
-### [패킷 히스토리 메모리에 올리기](https://github.com/DonghyungKo/axe_tasks/issues/3)
+### [[Closed] 패킷 히스토리 메모리에 올리기](https://github.com/DonghyungKo/axe_tasks/issues/3)
 > 지금은 파일로 관리, 오버헤드가 너무 심함
 패킷 히스토리를 메모리 위로 올리기
 
-### [주문 실패 시, 다시 주문을 제출하도록 수정](https://github.com/DonghyungKo/axe_tasks/issues/5)
+### [[Closed] 주문 실패 시, 다시 주문을 제출하도록 수정](https://github.com/DonghyungKo/axe_tasks/issues/5)
 
 > 취소 주문의 경우, qty를 입력해야 하는데 실시간으로 정확한 qty를 확인하기 어려움
 >
