@@ -6,8 +6,9 @@ import time
 
 from logger import LoggerMixin
 from messages.messages import MessageFactory
-from orders.client import Client
-from orders.querent import AXETaskQuerent
+from client import Client
+from orders.history import OrderHistory
+from orders.query_builder import AXETaskQuerent, OrderQueryBuilder
 
 import unittest
 
@@ -20,6 +21,7 @@ class ClientTest(unittest.TestCase, LoggerMixin):
     def __init__(self, *args, **kwargs):
         super(ClientTest, self).__init__(*args, **kwargs)
         self.msg_factory = MessageFactory()
+        self.order_history = OrderQueryBuilder()
         self.axe_querent = AXETaskQuerent()
 
         self.host = "114.204.7.144"
@@ -31,6 +33,7 @@ class ClientTest(unittest.TestCase, LoggerMixin):
         self._send_reset_message()
         self._send_first_message()
         self._send_second_message()
+        self.order_history.history
         self._send_third_message()
         self._send_fourth_message()
 
@@ -80,7 +83,6 @@ class ClientTest(unittest.TestCase, LoggerMixin):
             return
 
         unex_order = unex_orders.pop()
-        print(unex_order)
         self.logger.debug("UnexecutedOrder Info" + str(unex_order))
 
         order_no = getattr(unex_order, "order_no")
@@ -104,9 +106,11 @@ class ClientTest(unittest.TestCase, LoggerMixin):
             method()
 
     def _send_fourth_message(self):
+        return
         unex_orders = self.axe_querent.get_unex_orders_by_ticker_and_price(
             ticker="000660", price="61000"
         )
+
         if not unex_orders:  # all executed
             self.logger.debug("all orders are execued")
             return

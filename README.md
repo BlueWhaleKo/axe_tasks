@@ -14,7 +14,7 @@ python -m test
 ``` python
 git pull https://github.com/DonghyungKo/axe_tasks.git
 cd axe_tasks
-python -m messages.querent
+python -m messages.query_builder
 ```
 ![](./images/2020-05-26-03-10-39.png)
 
@@ -46,7 +46,7 @@ python -m messages.querent
 >
 > 따라서, 취소 주문은 주문 실패 시에 qty를 재확인하도록 수정해줘야함
 
-### [MessageQuerent 자료 구조 개선](https://github.com/DonghyungKo/axe_tasks/issues/6)
+### [OrderQueryBuilder 자료 구조 개선](https://github.com/DonghyungKo/axe_tasks/issues/6)
 > 지금은 모든 주문을 list에 담아서 전부 검사하고 있음
 > 
 > 따라서, 주문 클래스를 담는 자료구조를 개선하여 복잡도를 낮추는 형태로 최적화

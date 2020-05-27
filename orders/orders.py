@@ -22,6 +22,11 @@ class Order:
     def __repr__(self):
         return self.json(indent=4)
 
+    @property
+    def class_name(self):
+        """ 원활한 Query Building을 위해 추가한 속성 """
+        return self.__class__.__name__
+
 
 class NewOrder(Order):
     MSG_TYPE = "0"
@@ -37,9 +42,19 @@ class NewOrder(Order):
             **kwargs
         )
 
+        setattr(self, "unex_qty", qty)  # 신규 메시지 생성 시점에는 미체결 수량과 주문 수량이 일치함
 
-class CancelOrder(Order):
+    def subtract_unex_order_count(self, qty):
+        self.unex_qty = str(int(self.unex_qty) - qty).zfill(5)
+
+
+class CancelOrder(NewOrder):
     MSG_TYPE = "1"
+
+
+"""
+class UnexecutedOrder(NewOrder):
+    MSG_TYPE = None
 
     def __init__(self, msg_type, order_no, ticker, price, qty, response_code, **kwargs):
         super().__init__(
@@ -51,6 +66,9 @@ class CancelOrder(Order):
             response_code=response_code,
             **kwargs
         )
+
+        self.unex_qty = qty
+"""
 
 
 class ReceivedOrder(Order):
@@ -67,10 +85,6 @@ class ExecutedOrder(Order):
 
     def __init__(self, msg_type, order_no, qty, **kwargs):
         super().__init__(msg_type=msg_type, order_no=order_no, qty=qty, **kwargs)
-
-
-class UnexecutedOrder(NewOrder):
-    MSG_TYPE = None
 
 
 class OrderFactory:

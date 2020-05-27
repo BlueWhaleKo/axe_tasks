@@ -14,7 +14,7 @@ from messages.messages import (
     OrderReceivedMessage,
     MessageFactory,
 )
-from .orders import OrderFactory
+from orders.orders import OrderFactory
 from sockets import TCPSocket
 
 
@@ -37,45 +37,50 @@ class Client(LoggerMixin):
         self.socket.sendall(c_packet)  # send packet
 
         s_packet = self.recv()
-        s_msgs = self.msg_factory.create(s_packet)
+        if not s_packet:
+            self.logger.error("No Message Received From Server")
+            return False
 
+        s_msgs = self.msg_factory.create(s_packet)
         order_no, response_code = self._inspect_s_msgs(s_msgs)
         is_success = response_code == OrderReceivedMessage.SUCCESS
 
-        if c_packet == self.RESET_PACKET:
-            return is_success
+        if not c_packet == self.RESET_PACKET:
+            # overwrite Order Message
+            c_msg = self.msg_factory.create(c_packet).pop()
+            setattr(c_msg, "order_no", order_no)
+            setattr(c_msg, "response_code", response_code)
 
-        # overwrite Order Message
-        c_msg = self.msg_factory.create(c_packet).pop()
-        setattr(c_msg, "order_no", order_no)
-        setattr(c_msg, "response_code", response_code)
-
-        self.save_cache(c_msg)
-        self.save_cache(*s_msgs)
+            self.save_cache(c_msg)
+            self.save_cache(*s_msgs)
 
         return is_success
 
     def recv(self, size=1024, timeout=0.1):
         s_packets = []  # copy 최소화
-
         while True:
             try:
                 pk = self.socket.recv(size, timeout).decode()  # receive packet
             except AttributeError:  # no data
                 break
             s_packets.append(pk)
-
         s_packet = "".join(s_packets)
+
         return s_packet
 
     def save_cache(self, *msg: Message) -> None:
-        """ Save on Redis with key <Class Name> 
-            + Log as file
+        """ Save on Redis with key <Class Name> + leave log 
+            as json format
         """
         for m in msg:
             setattr(m, "time", str(datetime.now()))  # time property 추가
 
-            key = m.__class__.__name__
+            cls_name = m.__class__.__name__
+            if cls_name == "NewOrderMessage":
+                key = cls_name.replace("Message", "")  # NewOrderMessage -> NewOrder
+            else:
+                key = cls_name.replace("Message", "Order")  # xxxMessage -> xxxOrder
+
             self.redis.rpush(key, m.json())  # RAM
             self.logger.debug(f"{key}-{m.json()}")  # File
 
