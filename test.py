@@ -1,5 +1,5 @@
-import glob
 import inspect
+import json
 import os
 import socket
 import time
@@ -33,7 +33,6 @@ class ClientTest(unittest.TestCase, LoggerMixin):
         self._send_reset_message()
         self._send_first_message()
         self._send_second_message()
-        self.order_history.history
         self._send_third_message()
         self._send_fourth_message()
 
@@ -82,12 +81,11 @@ class ClientTest(unittest.TestCase, LoggerMixin):
             self.logger.debug("all orders are execued")
             return
 
-        unex_order = unex_orders.pop()
-        self.logger.debug("UnexecutedOrder Info" + str(unex_order))
+        self.logger.debug(unex_orders)
+        unex_order = unex_orders[-1]
 
         order_no = getattr(unex_order, "order_no")
-        unex_qty = getattr(unex_order, "unex_qty")
-        qty = min(10, int(unex_qty))
+        qty = min(10, int(getattr(unex_order, "unex_qty")))
         qty = str(qty).zfill(5)
 
         kwargs = {
@@ -97,7 +95,9 @@ class ClientTest(unittest.TestCase, LoggerMixin):
             "price": "60000",
             "qty": qty,
         }
+        self.logger.info(json.dumps(kwargs, indent=4))
         packet = "".join(kwargs.values()).encode()
+        self.logger.debug(packet)
         is_success = self.client.sendall(packet)
 
         if not is_success:  # retry
@@ -106,7 +106,6 @@ class ClientTest(unittest.TestCase, LoggerMixin):
             method()
 
     def _send_fourth_message(self):
-        return
         unex_orders = self.axe_querent.get_unex_orders_by_ticker_and_price(
             ticker="000660", price="61000"
         )
@@ -116,11 +115,9 @@ class ClientTest(unittest.TestCase, LoggerMixin):
             return
 
         unex_order = unex_orders.pop()
-        self.logger.debug("UnexecutedOrder Info" + str(unex_order))
 
         order_no = getattr(unex_order, "order_no")
-        unex_qty = getattr(unex_order, "unex_qty")
-        qty = min(10, int(unex_qty))
+        qty = min(10, int(getattr(unex_order, "unex_qty")))
         qty = str(qty).zfill(5)
 
         kwargs = {

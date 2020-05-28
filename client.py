@@ -45,18 +45,22 @@ class Client(LoggerMixin):
         order_no, response_code = self._inspect_s_msgs(s_msgs)
         is_success = response_code == OrderReceivedMessage.SUCCESS
 
-        if not c_packet == self.RESET_PACKET:
-            # overwrite Order Message
-            c_msg = self.msg_factory.create(c_packet).pop()
-            setattr(c_msg, "order_no", order_no)
-            setattr(c_msg, "response_code", response_code)
+        if c_packet == self.RESET_PACKET:
+            return response_code
 
-            self.save_cache(c_msg)
-            self.save_cache(*s_msgs)
+        # overwrite Order Message
+        c_msg = self.msg_factory.create(c_packet).pop()
+
+        setattr(c_msg, "response_code", response_code)
+        if response_code == "0":  # 성공한 주문만 order_no을 덮어씀
+            setattr(c_msg, "order_no", order_no)
+
+        self.save_cache(c_msg)
+        self.save_cache(*s_msgs)
 
         return is_success
 
-    def recv(self, size=1024, timeout=0.1):
+    def recv(self, size=1024, timeout=0.3):
         s_packets = []  # copy 최소화
         while True:
             try:

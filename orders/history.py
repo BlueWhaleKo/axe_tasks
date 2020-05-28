@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
+from itertools import chain
 import json
 import os
 import re
@@ -70,8 +71,6 @@ class OrderHistory(History, LoggerMixin):
         self.redis = Redis(host="127.0.0.1", port="6379")
         self.factory = OrderFactory()
 
-        self.update()
-
     """ 
     methods for real-time message history updating 
     """
@@ -81,20 +80,23 @@ class OrderHistory(History, LoggerMixin):
         self.update()
         return self._history
 
-    def update(self):
+    def update(self) -> None:
         new_orders = self.load_new_orders()
         if new_orders:
-            self._update(new_orders)  # _update 사항 일괄 적용
+            self._update(new_orders)
 
-    def _update(self, orders: List[Order]):
-        self._history.extend(orders)
+    def _update(self, new_orders: List[Order]):
+        """ please override this method to change updating rule """
+        self._update_history(new_orders)
+        self._update_unex_qty(new_orders)  # sorting dict는 마지막에 업데이트
 
-        self._update_unex_qty(orders)
-        self._last_modified = os.path.getmtime(self.log_path)
+    def _update_history(self, orders: List[Order]):
+        self._last_modified = os.path.getmtime(self.log_path)  # modified 시간 최신화
+        self._history.extend(orders)  # update history
 
     def _update_unex_qty(self, orders):
         """ 미체결 수량은 실시간으로 계산하여 업데이트 해야 함
-            효율적인 계산을 위해 QueryBuild를 상속한 모듈에서 다시 구현
+            ! 효율적인 계산을 위해 QueryBuild를 상속한 모듈에서 다시 implement
         """
         for o in orders:
 
@@ -113,16 +115,16 @@ class OrderHistory(History, LoggerMixin):
                     ):  # target matching
                         target_order.subtract_unex_order_count(qty)
 
-    def load_new_orders(self) -> List[Order]:
+    def load_new_orders(self) -> List[Order] or None:
         """ return new orders which is not in history """
+        try:
+            if self._last_modified != os.path.getmtime(self.log_path):  # if changed
+                loading_method = getattr(self, f"_load_new_orders_from_{self.source}")
+                return loading_method()
+        except FileNotFoundError:
+            pass
 
-        if self._last_modified == os.path.getmtime(self.log_path):  # no need
-            return
-
-        loading_method = getattr(self, f"_load_new_orders_from_{self.source}")
-        return loading_method()
-
-    """ load from RAM """
+    """ load data from RAM """
 
     def _load_new_orders_from_ram(self) -> List[Order]:
         new_orders = []
@@ -144,7 +146,7 @@ class OrderHistory(History, LoggerMixin):
 
         return new_orders
 
-    """ load from log file """
+    """ load data from log file """
 
     @property
     def log_path(self):
@@ -175,7 +177,7 @@ class OrderHistory(History, LoggerMixin):
             self._history[key].append(order)
 
     def _parse_dict(self, str_: str):
-        """ pattern: {....} """
+        """ pattern: {"key" : "value"} (json format) """
         pattern = re.compile(r"[{].+[}]")  # data
         return json.loads(pattern.search(str_).group())
 
@@ -183,47 +185,61 @@ class OrderHistory(History, LoggerMixin):
 class OrderHisotryEnhanced(OrderHistory):
     """ Key Sorting Added for Faster Query """
 
-    SORTING_KEYS = [
+    KEYS_SORTING_BEFORE_UPDATE = [
         "msg_type",
         "ticker",
         "price",
         "response_code",
         "order_no",
-        "unex_qty",
     ]
+    KEYS_SORTING_AFTER_UPDATE = ["unex_qty"]  # unex_qty는 계속 바뀌므로 따로 처리해주어야 함
+    SORTING_KEYS = KEYS_SORTING_BEFORE_UPDATE + KEYS_SORTING_AFTER_UPDATE
 
     def __init__(self, source="ram", *args, **kwargs):
         super().__init__(source=source, *args, **kwargs)
 
-    def _update(self, orders: List[Order]) -> None:
+    def _update(self, new_orders) -> None:
         """ has been overriden to add "sorting dicts" for faster query """
-        super()._update(orders)
 
-        for key in self.SORTING_KEYS:
-            self._update_sorting_dict(orders, sorting_key=key)
+        self._update_history(new_orders)
 
-    def _update_sorting_dict(self, orders: List[Order], sorting_key):
-        target = self._get_sorting_dict(sorting_key)
+        self._update_sorting_dict(
+            new_orders, *self.KEYS_SORTING_BEFORE_UPDATE,
+        )
+        self._update_unex_qty(new_orders)
+        self._update_sorting_dict(
+            new_orders, *self.KEYS_SORTING_AFTER_UPDATE
+        )  # 값이 바뀌는 key들은 마지막에 업데이트
 
-        # _update
-        for o in orders:
-            try:
-                value = getattr(o, sorting_key)
-            except AttributeError:
-                continue
+    def _update_sorting_dict(self, orders: List[Order], *sorting_keys):
+        for key in sorting_keys:
+            sorting_dict = self._get_sorting_dict(key)
 
-            if value:
-                target[value].append(o)
+            if key == "unex_qty":
+                # unex_qty가 변한 주문들은 새롭게 key를 업데이트를 해줘야 함
+                # 현재는 전체 체결된 주문(fully_executed_orders)은 제외하고 re-update
+                # ! 이 부분에 비호율성이 심하므로, 최적화 방법을 고민
+                fully_executed_orders = sorting_dict.pop("00000", [])
+                left_orders = list(chain(*sorting_dict.values()))
+
+                sorting_dict.clear()  # reset
+                sorting_dict["00000"] = fully_executed_orders  # refill
+
+                orders.extend(left_orders)  # new orders + not fully executed orders
+
+            for o in orders:
+                value = getattr(o, key, None)
+
+                if value is not None:
+                    sorting_dict[value].append(o)
 
     def _get_sorting_dict(self, sorting_key):
-        self.update()
+        # self.update()  # check update for every call
 
         # get sorting dict
         property_name = f"_orders_sort_by_{sorting_key}"
         try:
-            target = getattr(self, property_name)
+            return getattr(self, property_name)
         except AttributeError:
-            target = defaultdict(lambda: [])
-            setattr(self, property_name, target)
-
-        return target
+            setattr(self, property_name, defaultdict(lambda: []))
+            return getattr(self, property_name)

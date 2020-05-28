@@ -64,11 +64,12 @@ class OrderQueryBuilder(QueryBuilder, OrderHisotryEnhanced):
         super(QueryBuilder, self).__init__(source=source, *args, **kwargs)
 
     def execute(self):
+        result = super().execute()
         self.update()
-        return super().execute()
+        return result
 
     def _update_unex_qty(self, orders):
-        """ override for faster update """
+        """ overriden for faster unex_qty updates """
 
         for o in orders:
             # execution order or successful cancel order
@@ -79,11 +80,12 @@ class OrderQueryBuilder(QueryBuilder, OrderHisotryEnhanced):
                 qty = int(getattr(o, "qty"))
 
                 self.add_query(msg_type="0", order_no=order_no)
-                target_order = self.execute()  # list
-
-                if target_order:
-                    target_order = target_order.pop()
+                try:
+                    target_order = self.execute().pop()
                     target_order.subtract_unex_order_count(qty)
+
+                except IndexError:  # empty
+                    pass
 
     """ 
         Query Methods 
@@ -99,9 +101,9 @@ class OrderQueryBuilder(QueryBuilder, OrderHisotryEnhanced):
 
     # low-level query methods
     def add_query(self, orders=None, **kwargs):
+        self.update()
 
         """ include orders that match key and value """
-
         for target_key, target_val in kwargs.items():
             self._validate_query_params(target_key, target_val)
 
@@ -121,9 +123,7 @@ class OrderQueryBuilder(QueryBuilder, OrderHisotryEnhanced):
             for value, orders in target.items():
                 if not value == exclusive_value:
                     result += orders
-                    print("AAAA" * 100)
-                    print(value, exclusive_value)
-                    print(orders)
+
         self._add_query_result_to_buffer(result)
 
     def _validate_query_params(self, key, val):
@@ -143,17 +143,17 @@ class OrderQueryBuilder(QueryBuilder, OrderHisotryEnhanced):
     def calc_ordered_qty_by_order_no(self, order_no: str) -> int:
         self.add_query(order_no=order_no, msg_type="0", response_code="0")
         orders = self.execute()
-        return self._sum_qty(orders)
+        return self.sum(orders, attr="qty")
 
     def calc_cancelled_qty_by_order_no(self, order_no: str) -> int:
         self.add_query(order_no=order_no, msg_type="1", response_code="0")
         orders = self.execute()
-        return self._sum_qty(orders)
+        return self.sum(orders, attr="qty")
 
     def calc_executed_qty_by_order_no(self, order_no: str) -> int:
         self.add_query(order_no=order_no, msg_type="3")
         orders = self.execute()
-        return self._sum_qty(orders)
+        return self.sum(orders, attr="qty")
 
     def calc_unexecuted_qty_by_order_no(self, order_no: str) -> int:
         order_qty = self.calc_ordered_qty_by_order_no(order_no)
@@ -161,24 +161,14 @@ class OrderQueryBuilder(QueryBuilder, OrderHisotryEnhanced):
         cancel_qty = self.calc_cancelled_qty_by_order_no(order_no)
         return order_qty - ex_qty - cancel_qty
 
-    def _sum_qty(self, orders: List[Order]):
+    def sum(self, orders: List[Order], attr):
         if not len(orders):  # empty
-            return 0
-        elif len(set(m.__class__ for m in orders)) > 1:  # all orders must be same type
+            return None
+
+        elif len(set(o.__class__ for o in orders)) > 1:  # all orders must be same type
             raise TypeError(f"Does not support mixed types ")
 
-        return sum([int(m.qty) for m in orders])
-
-    def _sum_unex_qty(self, orders: List[Order]):
-        if not len(orders):  # empty
-            return 0
-
-        if len(set(m.__class__ for m in orders)) > 1:  # all orders must be same type
-            raise TypeError(f"Does not support mixed types")
-        if not isinstance(orders[0], NewOrder):
-            raise TypeError(f"Only NewOrder class has unex_qty")
-
-        return sum([int(m.unex_qty) for m in orders])
+        return sum([int(getattr(o, attr)) for o in orders])
 
 
 class AXETaskQuerent(OrderQueryBuilder):
@@ -196,14 +186,14 @@ class AXETaskQuerent(OrderQueryBuilder):
         self.add_query(msg_type="0", response_code="0")
         self.add_exclusive_query(unex_qty="00000")
         unex_orders = self.execute()
-        return self._sum_unex_qty(unex_orders)
+        return self.sum(unex_orders, "unex_qty")
 
     def get_unex_qty_by_ticker_and_price(self, ticker: str, price: str):
         """ 2. 종목코드와 가격을 입력으로 전체 미체결 주문 목록을 반환하는 함수 """
         self.add_query(msg_type="0", response_code="0", ticker=ticker, price=price)
         self.add_exclusive_query(unex_qty="00000")
         unex_orders = self.execute()
-        return self._sum_unex_qty(unex_orders)
+        return self.sum(unex_orders, "unex_qty")
 
     def get_unex_orders_by_ticker(self, ticker: str):
         """ 3. 종목코드를 입력으로 전체 미체결 주문 목록을 반환하는 함수 """
