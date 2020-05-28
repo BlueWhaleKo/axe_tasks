@@ -161,9 +161,9 @@ class OrderQueryBuilder(QueryBuilder, OrderHisotryEnhanced):
         cancel_qty = self.calc_cancelled_qty_by_order_no(order_no)
         return order_qty - ex_qty - cancel_qty
 
-    def sum(self, orders: List[Order], attr):
+    def sum(self, orders: List[Order], attr) -> int:
         if not len(orders):  # empty
-            return None
+            return 0
 
         elif len(set(o.__class__ for o in orders)) > 1:  # all orders must be same type
             raise TypeError(f"Does not support mixed types ")
