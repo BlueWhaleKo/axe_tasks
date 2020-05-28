@@ -168,7 +168,11 @@ class OrderQueryBuilder(QueryBuilder, OrderHisotryEnhanced):
         elif len(set(o.__class__ for o in orders)) > 1:  # all orders must be same type
             raise TypeError(f"Does not support mixed types ")
 
-        return sum([int(getattr(o, attr)) for o in orders])
+        result = sum([int(getattr(o, attr)) for o in orders])
+        if result is None:
+            return 0
+
+        return result
 
 
 class AXETaskQuerent(OrderQueryBuilder):
@@ -183,7 +187,7 @@ class AXETaskQuerent(OrderQueryBuilder):
 
     def get_unex_qty_by_ticker(self, ticker: str):
         """ 1. 종목코드를 입력으로 해당 종목의 전체 미체결 수량을 반환하는 함수 """
-        self.add_query(msg_type="0", response_code="0")
+        self.add_query(msg_type="0", response_code="0", ticker=ticker)
         self.add_exclusive_query(unex_qty="00000")
         unex_orders = self.execute()
         return self.sum(unex_orders, "unex_qty")
